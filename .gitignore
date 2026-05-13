@@ -1,0 +1,28 @@
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Private
+.env
+CLAUDE.md
+data/
+docs/
+*.pdf
+
+# IDE
+.vscode/
+.idea/
+
+# Notebooks checkpoints
+notebooks/.ipynb_checkpoints/
+
+# MLflow
+mlflow.db
+
+# OS
+.DS_Store
+Thumbs.db

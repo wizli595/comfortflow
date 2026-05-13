@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+import numpy as np
+
+
+class ComfortModel(Protocol):
+    def train(self, features: np.ndarray, target: np.ndarray) -> None: ...
+    def predict(self, features: np.ndarray) -> np.ndarray: ...
+    def get_metrics(self) -> dict[str, float]: ...
+
+
+class FeatureRepository(Protocol):
+    def get_comfort_features(self, building_id: str) -> np.ndarray: ...
+    def get_comfort_targets(self, building_id: str) -> np.ndarray: ...
