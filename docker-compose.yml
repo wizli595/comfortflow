@@ -68,6 +68,15 @@ services:
     volumes:
       - mlflow_data:/mlartifacts
 
+  # ── Simulation ───────────────────────────────────────
+  sinergym:
+    image: sailugr/sinergym:latest
+    volumes:
+      - ./scripts:/app/scripts
+      - ./data/sinergym:/app/output
+    profiles:
+      - simulation
+
   # ── Monitoring ───────────────────────────────────────
   prometheus:
     image: prom/prometheus:latest
