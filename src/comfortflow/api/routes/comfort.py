@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
 from fastapi import APIRouter, Depends
 
+from comfortflow.adapters.monitoring.prometheus_metrics import (
+    CURRENT_PMV, PREDICTION_COUNT, PREDICTION_LATENCY,
+)
 from comfortflow.api.dependencies import get_comfort_model
 from comfortflow.api.schemas import ComfortRequest, ComfortResponse
 from comfortflow.domain.comfort.entities import IndoorClimate, OccupantState
@@ -15,6 +20,8 @@ router = APIRouter(prefix="/comfort", tags=["comfort"])
 
 @router.post("/predict", response_model=ComfortResponse)
 def predict_comfort(req: ComfortRequest, model=Depends(get_comfort_model)):
+    start = time.perf_counter()
+    PREDICTION_COUNT.inc()
     features = np.array([[
         req.air_temperature_celsius,
         req.relative_humidity_percent,
@@ -37,6 +44,9 @@ def predict_comfort(req: ComfortRequest, model=Depends(get_comfort_model)):
     sensations = {-3: "Cold", -2: "Cool", -1: "Slightly Cool", 0: "Neutral",
                   1: "Slightly Warm", 2: "Warm", 3: "Hot"}
     label = sensations.get(round(prediction), "Neutral")
+
+    CURRENT_PMV.set(pmv.value)
+    PREDICTION_LATENCY.observe(time.perf_counter() - start)
 
     return ComfortResponse(
         pmv=pmv.value,
