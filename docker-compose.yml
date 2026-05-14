@@ -39,18 +39,25 @@ services:
     ports:
       - "8080:8080"
       - "7077:7077"
+    volumes:
+      - ./jars:/opt/spark/extra-jars
+      - ./src:/opt/spark/src
 
   spark-worker-1:
     image: apache/spark:3.5.3
     command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
     depends_on:
       - spark-master
+    volumes:
+      - ./jars:/opt/spark/extra-jars
 
   spark-worker-2:
     image: apache/spark:3.5.3
     command: bash -c "/opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077"
     depends_on:
       - spark-master
+    volumes:
+      - ./jars:/opt/spark/extra-jars
 
   # ── ML ───────────────────────────────────────────────
   mlflow:
