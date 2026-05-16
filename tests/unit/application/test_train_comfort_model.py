@@ -26,9 +26,11 @@ class FakeModel:
 
 
 class TestTrainComfortModel:
-    def test_returns_metrics(self) -> None:
-        result = train_comfort_model(FakeModel(), FakeRepository())
+    def test_returns_metrics_and_test_data(self) -> None:
+        result, X_test, y_test = train_comfort_model(FakeModel(), FakeRepository())
         assert result.metrics["rmse"] == 0.5
+        assert len(X_test) > 0
+        assert len(y_test) > 0
 
     def test_model_gets_trained(self) -> None:
         model = FakeModel()

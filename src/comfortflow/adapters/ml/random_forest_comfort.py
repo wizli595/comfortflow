@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split
 
 
 class RandomForestComfortModel:
@@ -14,14 +13,15 @@ class RandomForestComfortModel:
         self._metrics: dict[str, float] = {}
 
     def train(self, features: np.ndarray, target: np.ndarray) -> None:
-        X_tr, X_val, y_tr, y_val = train_test_split(features, target, test_size=0.1, random_state=42)
-        self._model = RandomForestRegressor(n_estimators=200, min_samples_leaf=5, n_jobs=-1, random_state=42)
-        self._model.fit(X_tr, y_tr)
-        preds = self._model.predict(X_val)
+        self._model = RandomForestRegressor(
+            n_estimators=200, min_samples_leaf=5, n_jobs=-1, random_state=42,
+        )
+        self._model.fit(features, target)
+        preds = self._model.predict(features)
         self._metrics = {
-            "rmse": float(np.sqrt(mean_squared_error(y_val, preds))),
-            "mae": float(mean_absolute_error(y_val, preds)),
-            "r2": float(r2_score(y_val, preds)),
+            "rmse": float(np.sqrt(mean_squared_error(target, preds))),
+            "mae": float(mean_absolute_error(target, preds)),
+            "r2": float(r2_score(target, preds)),
         }
 
     def predict(self, features: np.ndarray) -> np.ndarray:
