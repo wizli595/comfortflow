@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+
+from comfortflow.config import get_config
 
 OBS_NAMES = [
     "month", "day_of_month", "hour", "outdoor_temperature", "outdoor_humidity",
@@ -25,30 +24,16 @@ TARGET_COL = "hvac_electricity_demand_rate"
 
 
 class EnergyRepository:
-    def __init__(self, path: str = "data/sinergym/energy_data.csv") -> None:
+    def __init__(self, path: str | None = None) -> None:
+        path = path or get_config()["paths"]["sinergym_csv"]
         df = pd.read_csv(path)
         rename = {f"obs_{i}": OBS_NAMES[i] for i in range(len(OBS_NAMES))}
-        rename["action_0"] = "action_heating_setpoint"
-        rename["action_1"] = "action_cooling_setpoint"
         df = df.rename(columns=rename)
-
-        X = df[FEATURE_COLS].values
-        y = df[TARGET_COL].values / 1000.0  # Convert to kW
-
-        self._X_train, self._X_test, self._y_train, self._y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42,
-        )
+        self._features = df[FEATURE_COLS].values
+        self._targets = df[TARGET_COL].values / 1000.0
 
     def get_energy_features(self) -> np.ndarray:
-        return self._X_train
+        return self._features
 
     def get_energy_targets(self) -> np.ndarray:
-        return self._y_train
-
-    @property
-    def test_features(self) -> np.ndarray:
-        return self._X_test
-
-    @property
-    def test_targets(self) -> np.ndarray:
-        return self._y_test
+        return self._targets

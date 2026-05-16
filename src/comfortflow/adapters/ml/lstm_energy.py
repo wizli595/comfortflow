@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
 
+from comfortflow.config import get_config
+
 
 class _LSTMNet(nn.Module):
-    def __init__(self, input_dim: int, hidden: int = 64) -> None:
+    def __init__(self, input_dim: int, hidden: int = 128) -> None:
         super().__init__()
-        self.lstm = nn.LSTM(input_dim, hidden, num_layers=2, batch_first=True, dropout=0.2)
-        self.fc = nn.Sequential(nn.Linear(hidden, 32), nn.ReLU(), nn.Linear(32, 1))
+        self.lstm = nn.LSTM(input_dim, hidden, num_layers=2, batch_first=True, dropout=0.1)
+        self.fc = nn.Sequential(nn.Linear(hidden, 64), nn.ReLU(), nn.Linear(64, 1))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         out, _ = self.lstm(x)
@@ -22,7 +25,7 @@ class _LSTMNet(nn.Module):
 
 
 class LSTMEnergyModel:
-    def __init__(self, seq_len: int = 24, epochs: int = 30, lr: float = 0.001) -> None:
+    def __init__(self, seq_len: int = 12, epochs: int = 50, lr: float = 0.001) -> None:
         self._net: _LSTMNet | None = None
         self._x_scaler = StandardScaler()
         self._y_scaler = StandardScaler()
@@ -32,59 +35,68 @@ class LSTMEnergyModel:
         self._lr = lr
 
     def train(self, features: np.ndarray, target: np.ndarray) -> None:
-        X_scaled = self._x_scaler.fit_transform(features)
-        y_scaled = self._y_scaler.fit_transform(target.reshape(-1, 1)).flatten()
+        X_s = self._x_scaler.fit_transform(features)
+        y_s = self._y_scaler.fit_transform(target.reshape(-1, 1)).flatten()
 
-        X_seq, y_seq = self._make_sequences(X_scaled, y_scaled)
+        X_seq, y_seq = self._make_episode_sequences(X_s, y_s)
         split = int(len(X_seq) * 0.9)
-        X_tr, X_val = X_seq[:split], X_seq[split:]
-        y_tr, y_val = y_seq[:split], y_seq[split:]
 
-        train_ds = TensorDataset(torch.FloatTensor(X_tr), torch.FloatTensor(y_tr))
-        train_dl = DataLoader(train_ds, batch_size=256, shuffle=True)
-
+        dl = DataLoader(
+            TensorDataset(torch.FloatTensor(X_seq[:split]), torch.FloatTensor(y_seq[:split])),
+            batch_size=512, shuffle=True,
+        )
         self._net = _LSTMNet(features.shape[1])
-        optimizer = torch.optim.Adam(self._net.parameters(), lr=self._lr)
-        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3)
-        loss_fn = nn.MSELoss()
+        opt = torch.optim.Adam(self._net.parameters(), lr=self._lr)
+        sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=5, factor=0.5)
 
-        for epoch in range(self._epochs):
+        for _ in range(self._epochs):
             self._net.train()
-            epoch_loss = 0.0
-            for xb, yb in train_dl:
-                optimizer.zero_grad()
-                loss = loss_fn(self._net(xb).squeeze(), yb)
+            total = 0.0
+            for xb, yb in dl:
+                opt.zero_grad()
+                loss = nn.MSELoss()(self._net(xb).squeeze(), yb)
                 loss.backward()
-                optimizer.step()
-                epoch_loss += loss.item()
-            scheduler.step(epoch_loss)
+                opt.step()
+                total += loss.item()
+            sched.step(total / len(dl))
 
         self._net.eval()
         with torch.no_grad():
-            val_preds_scaled = self._net(torch.FloatTensor(X_val)).numpy().flatten()
-        val_preds = self._y_scaler.inverse_transform(val_preds_scaled.reshape(-1, 1)).flatten()
-        y_val_real = self._y_scaler.inverse_transform(y_val.reshape(-1, 1)).flatten()
-
+            val_p = self._net(torch.FloatTensor(X_seq[split:])).numpy().flatten()
+        val_real = self._y_scaler.inverse_transform(val_p.reshape(-1, 1)).flatten()
+        y_real = self._y_scaler.inverse_transform(y_seq[split:].reshape(-1, 1)).flatten()
         self._metrics = {
-            "rmse": float(np.sqrt(mean_squared_error(y_val_real, val_preds))),
-            "mae": float(mean_absolute_error(y_val_real, val_preds)),
-            "r2": float(r2_score(y_val_real, val_preds)),
+            "rmse": float(np.sqrt(mean_squared_error(y_real, val_real))),
+            "mae": float(mean_absolute_error(y_real, val_real)),
+            "r2": float(r2_score(y_real, val_real)),
         }
 
     def predict(self, features: np.ndarray) -> np.ndarray:
-        X_scaled = self._x_scaler.transform(features)
-        X_seq, _ = self._make_sequences(X_scaled, np.zeros(len(features)))
+        X_s = self._x_scaler.transform(features)
+        X_seq, _ = self._make_episode_sequences(X_s, np.zeros(len(features)))
         self._net.eval()
         with torch.no_grad():
-            preds_scaled = self._net(torch.FloatTensor(X_seq)).numpy().flatten()
-        return self._y_scaler.inverse_transform(preds_scaled.reshape(-1, 1)).flatten()
+            p = self._net(torch.FloatTensor(X_seq)).numpy().flatten()
+        return self._y_scaler.inverse_transform(p.reshape(-1, 1)).flatten()
 
     def get_metrics(self) -> dict[str, float]:
         return self._metrics
 
-    def _make_sequences(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _make_episode_sequences(self, X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Build sequences without crossing episode boundaries."""
+        episode_len = len(X) // max(1, self._detect_episodes(X))
         X_seq, y_seq = [], []
-        for i in range(len(X) - self._seq_len):
-            X_seq.append(X[i: i + self._seq_len])
-            y_seq.append(y[i + self._seq_len])
+        for start in range(0, len(X) - episode_len + 1, episode_len):
+            ep_X = X[start:start + episode_len]
+            ep_y = y[start:start + episode_len]
+            for i in range(len(ep_X) - self._seq_len):
+                X_seq.append(ep_X[i:i + self._seq_len])
+                y_seq.append(ep_y[i + self._seq_len])
         return np.array(X_seq), np.array(y_seq)
+
+    @staticmethod
+    def _detect_episodes(X: np.ndarray) -> int:
+        """Detect number of episodes by counting resets in the first column (month)."""
+        diffs = np.diff(X[:, 0])
+        resets = np.sum(np.abs(diffs) > 5)
+        return max(1, resets + 1)

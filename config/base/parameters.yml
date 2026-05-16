@@ -1,0 +1,24 @@
+paths:
+  ashrae_csv: "data/ashrae_db2.01.csv"
+  bronze_parquet: "data/bronze/ashrae.parquet"
+  silver_parquet: "data/silver/cleaned.parquet"
+  gold_comfort: "data/gold/comfort/features.parquet"
+  sinergym_csv: "data/sinergym/energy_data.csv"
+
+split:
+  test_size: 0.2
+  random_state: 42
+
+mlflow:
+  tracking_uri: "http://localhost:5000"
+  experiment_comfort: "comfort-prediction"
+  experiment_energy: "energy-prediction"
+
+cleaning:
+  outlier_bounds:
+    air_temperature_celsius: [5.0, 45.0]
+    relative_humidity_percent: [0.0, 100.0]
+    air_velocity_ms: [0.0, 5.0]
+    clothing_insulation_clo: [0.0, 3.0]
+    metabolic_rate_met: [0.5, 4.0]
+    thermal_sensation: [-3.0, 3.0]
